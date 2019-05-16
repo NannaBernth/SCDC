@@ -1,0 +1,612 @@
+---
+title: "Social exam"
+author: "Nina Dyrberg"
+date: "25/4/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Prepare
+```{r + WD and libraries}
+setwd("C:/Users/nanna/OneDrive - Aarhus universitet/4. Semester/Exam/SCDC")
+
+library(pacman)
+pacman::p_load(tidyverse, reshape, gridExtra, brms)
+
+```
+
+```{r + Load data + Change colums + Merge}
+
+test <- read.csv("Oversigt-over-variabler - Sheet1.csv", sep = ",")
+test$ID <- as.character(test$ID)
+
+quest <- read.csv("TRAFFIC.csv", sep = ";")
+
+quest$Participant.ID <- as.character(quest$Participant.ID)
+quest <- rename(quest, c(Participant.ID = "ID"))
+
+
+colnames(quest) <- c("Time", "ID", "Gender", "Age", "Income", "webintuitive", "nudge", "environmentcare", "sustainabilityprod", "price", "manipulated", "social", "Rank1", "Rank2", "Rank3", "Rank4", "Rank5", "Rank6" )
+
+
+#Change a lot of names in quest to make merge work
+quest$ID[5] <- "Bent Dyrberg"
+quest$ID[7] <- "Bjarne Bernth Davidsen"
+quest$ID[29] <- "Cille Dyrberg"
+quest$ID[43] <- "Frida HÃ¦strup"
+quest$ID[53] <- "Jane Ladefoged"
+test$ID[test$ID=="Laura"] <- "Laura Gissel"
+quest$ID[39] <- "Laurits Dixen"
+quest$ID[10] <- "Kathrine KrÃ¸jgaard"
+quest$ID[28] <- "Malene Dyrberg"
+quest$ID[44] <- "Maria Dalsgaard Bloch-Jensen"
+quest$ID[17] <- "Maria Kyhnel"
+quest$ID[23] <- "Mette Dyhrberg Rasmussen"
+quest$ID[37] <- "Mikkel Werling"
+quest$ID[52] <- "Nikoline GlÃ¼sing Andersen"
+quest$ID[32] <- "Rasmus Bernth Davidsen"
+quest$ID[26] <- "Sandra Hummelgaard"
+
+both <- merge(quest, test, by = "ID")
+
+```
+
+###DAG
+```{r + DAG}
+#Making a beautiful dag
+p_load(dagitty)
+
+#before (Not rally used later at all)
+g <- dagitty('dag {
+    Price -> Green_products_bought
+    Brand_names -> Green_products_bought
+    Brand_names -> Price -> Green_products_bought
+    Pictures_of_products -> Green_products_bought
+    Nudge -> Green_products_bought
+    Condition -> Green_products_bought
+    ParticipantID -> Green_products_bought
+}')
+plot(graphLayout(g))
+
+
+##after having considered the causal inference
+g2 <- dagitty('dag {
+    Nudge -> GreenProducts
+    Condition -> GreenProducts
+    ParticipantID -> GreenProducts
+    Price -> GreenProducts
+}')
+
+plot(graphLayout(g2))
+```
+
+###INSPECT THE DATA
+```{r + INSPECT THE DATA}
+
+#Gender distribution and age
+quest %>%
+ group_by(Gender) %>%
+ summarise(Gender_count=n(), mean(Age))
+
+#Overall age mean
+quest %>%
+ summarise(mean(Age), sd(Age))
+
+#Green Products bought
+both %>%
+  group_by(Colour)%>%
+ summarise(Colour_count=n())
+
+#Average
+425/60
+
+#Green Products bought per condition
+both %>%
+  group_by(Colour, Condition)%>%
+ summarise(Colour_count=n())
+
+#Social
+122/20
+
+#Sustain
+140/20
+
+#Combined
+163/20
+
+
+#How did people rate their care for the environment
+both %>%
+  group_by(Condition, environmentcare)%>%
+ summarise(count=n())
+
+#How did people rate their consideration for the sustainablity when shopping
+both %>%
+  group_by(Condition, sustainabilityprod)%>%
+ summarise(count=n())
+
+
+#The mean amount spend per condition (randomization of price)
+both %>%
+  group_by(Condition)%>%
+ summarise(mean(Total))
+
+```
+
+```{r + Plotting with percentage}
+#Plot the data // Count plot with percent for Social and Sustaiable
+
+plot.soc <- ggplot(both %>% filter(Condition == "Social") %>% count(Condition, Colour) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(Condition, n, fill= Colour)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5))
+
+
+plot.sus <- ggplot(both %>% filter(Condition == "Sustainable") %>% count(Condition, Colour) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(Condition, n, fill= Colour)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5))
+
+
+plot.comb <- ggplot(both %>% filter(Condition == "Combined") %>% count(Condition, Colour) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(Condition, n, fill= Colour)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5))
+
+plot.comb
+
+
+#overblik over alle produkter købt i alle conditions - KUNNE BRUGES TIL SVAR PÅ H1 ved at tage combined ud
+grid.arrange(plot.soc, plot.sus, plot.comb)
+
+
+plot.all <- ggplot(both %>% group_by(Condition) %>% count(Condition, Colour) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(Condition, n, fill= Colour)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("g"= "limegreen", "r" = "red2", "y" = "yellow"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5)) + ggtitle("Distribution of products") + ylab("Products in total")
+
+plot.all
+
+
+```
+
+```{r + Plotting with Questionnaire}
+
+
+#Do they already care about the environment?
+ggplot(both %>% group_by(environmentcare, Condition) %>% filter(Condition == "Sustainable") %>% count(Condition, Colour, environmentcare) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(environmentcare, n, fill= Colour, color = Condition)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_dodge(0.8))
+
+#Visual overview over how people act in relation to their care about environment
+
+
+
+#useless but fun plots (REMEMBER DOES NOT REALLY MAKE SENSE FOR SOCIAL)
+ggplot(both %>% group_by(Condition, environmentcare) %>% count(Condition, Colour, environmentcare) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(environmentcare, n, fill= Colour)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_dodge(0.8)) + 
+  facet_wrap(~ Condition)
+
+
+
+ggplot(both %>% group_by(Condition, sustainabilityprod) %>% count(Condition, Colour, sustainabilityprod) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(sustainabilityprod, n, fill= Colour)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_dodge(0.8)) + 
+  facet_wrap(~ Condition)
+
+```
+
+```{r + Useless but fun plots over the price of the bought products}
+
+ggplot(both %>% filter(Condition == "Social") %>% group_by(Product, Price) %>% count(Condition, Product, Price) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(as.factor(Product), n, fill= as.factor(Price))) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  #scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  facet_wrap(~ Condition)
+
+
+ggplot(both %>% filter(Condition == "Sustainable") %>% group_by(Product, Price) %>% count(Condition, Product, Price) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(as.factor(Product), n, fill= as.factor(Price))) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  #scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  facet_wrap(~ Condition)
+
+
+```
+
+
+##AND THEEEEENNN BAYISIAN 
+
+
+```{r + Preparing variables}
+
+#Dummy variable for green labelled products
+both <- both %>% mutate(green_product = ifelse(Colour == "g", 1, 0))
+
+#Setting constrast for h1
+both$con.h1[both$Condition == "Social"] <- -0.5
+both$con.h1[both$Condition == "Sustainable"] <- 0.5 
+both$con.h1[both$Condition == "Combined"] <- 0 
+
+#Setting constrast for h2
+both$con.h2[both$Condition == "Social"] <- -1
+both$con.h2[both$Condition == "Sustainable"] <- -1 
+both$con.h2[both$Condition == "Combined"] <- 2
+
+
+```
+
+
+```{r + Motivating priors}
+library(boot)
+
+#In real number we expect a prior of 1/3 chance of choosing green and 75 %
+logit(1/3)
+logit(0.755)
+
+#Expecting 95 and 88 percent of the data to lie within a 1.1-3 standard devations
+logit(0.95)
+logit(0.88)
+
+#From real scale to logit
+inv.logit(1.1)
+inv.logit(2)
+
+
+curve(dnorm(x, 0.33, 0.755), from = 0, to = 1)
+curve(dnorm(x, 0, 0.88), from = 0, to = 1)
+
+```
+
+
+```{r + Preparing models + priors}
+#MODELS
+
+model0 <- bf(green_product ~ 1 + Price + (1 + Price || ID) + (1 + Price || Product))
+
+model1a <- bf(green_product ~ 1 + con.h1 + Price + (1 + Price || ID) + (1 + Price || Product))
+
+model1b <- bf(green_product ~ 1 + con.h1 + Price + con.h1*Price + (1 + Price || ID) + (1 + Price || Product))
+
+model2a <- bf(green_product ~ 1 + con.h2 + Price + (1 + Price || ID) + (1 + Price || Product))
+
+
+model2b <- bf(green_product ~ 1 + con.h2 + Price + con.h2*Price + (1 + Price || ID) + (1 + Price || Product))
+
+model3a <- bf(green_product ~ 1 + con.h1 + con.h2 + Price + (1 + Price || ID) + (1 + Price || Product))
+
+
+model3b <- bf(green_product ~ 1 + con.h1 + con.h2 + Price + con.h1*Price + con.h2*Price + (1 + Price || ID) + (1 + Price || Product))
+
+
+#PRIORS 
+
+prior <- c(prior(normal(-0.69, 1.1), class = Intercept), 
+           prior(normal(0, 2), class = b),
+           prior(normal(0, 2), class = sd))
+
+```
+
+
+```{r + Models + summaries}
+
+brm.model0 <-
+  brm(model0, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      sample_prior = TRUE,
+      seed = 111)
+
+
+brm.model1a <-
+  brm(model1a, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      sample_prior = TRUE,
+      seed = 111)
+
+
+brm.model1b <-
+  brm(model1b, 
+      data = both,
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      seed = 111)
+
+
+brm.model2a <-
+  brm(model2a, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      sample_prior = TRUE,
+      seed = 111)
+
+
+brm.model2b <-
+  brm(model2b, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      seed = 111)
+
+
+brm.model3a <-
+  brm(model3a, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.95),
+      seed = 111)
+
+
+brm.model3b <-
+  brm(model3b, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      sample_prior = TRUE,
+      control = list(adapt_delta = 0.95),
+      seed = 111)
+
+
+#Just cheking how they converged
+summary(brm.model0)
+summary(brm.model1a)
+summary(brm.model1b)
+summary(brm.model2a)
+summary(brm.model2b)
+summary(brm.model3a)
+summary(brm.model3b)
+
+```
+
+```{r + Comparing models}
+
+#Adding that WAIC to the models
+brm.model0 <- add_criterion(brm.model0, "waic")
+brm.model1a <- add_criterion(brm.model1a, "waic")
+brm.model1b <- add_criterion(brm.model1b, "waic")
+brm.model2a <- add_criterion(brm.model2a, "waic")
+brm.model2b <- add_criterion(brm.model2b, "waic")
+brm.model3a <- add_criterion(brm.model3a, "waic")
+brm.model3b <- add_criterion(brm.model3b, "waic")
+
+#Comparing based on waic
+waic.compare <- loo_compare(brm.model0, 
+                 brm.model1a, 
+                 brm.model1b,
+                 brm.model2a,
+                 brm.model2b,
+                 brm.model3a,
+                 brm.model3b,
+                 criterion = "waic")
+
+print(waic.compare, simplify = F)
+
+
+#Plotting the WAICs against each other (just for the visual love)
+waic.compare %>%
+  data.frame() %>% 
+  rownames_to_column(var = "model") %>% 
+  
+  ggplot() +
+  geom_pointrange(aes(x = reorder(model, -waic), y = waic,
+                      ymin = waic - se_waic,
+                      ymax = waic + se_waic,
+                      color = model),
+                  shape = 16) +
+  #scale_color_manual(values = wes_palette("Moonrise2")[c(1:2, 4)]) +
+  coord_flip() +
+  labs(x = NULL, y = NULL,
+       title = "WAIC") +
+  theme(axis.ticks.y    = element_blank(),
+        legend.position = "none")
+
+#Convert the differences from the elpd metric to the WAIC metric.
+cbind(waic_diff = waic.compare[, 1] * -2,
+      se        = waic.compare[, 2] *  2) %>% 
+  round(digits = 2)
+
+
+#Calculating WAIC weights
+model_weights(brm.model0,
+              brm.model1a,
+              brm.model1b,
+              brm.model2a,
+              brm.model2b,
+              brm.model3a,
+              brm.model3b,
+              weights = "waic")
+
+
+#Calculating WAIC weights #Just fun and games with different models
+model_weights(brm.model0,
+              brm.model3a,
+              weights = "waic")
+
+```
+
+
+```{r + Looking at model 3a (the best)}
+#Prior Predictive Check
+
+#Model for sample_prior_only
+brm.model3a_prior <-
+  brm(model3a, 
+      data = both, 
+      family = bernoulli(),
+      prior = prior, 
+      iter = 4000, warmup = 1000, chains = 4, cores = 2,
+      control = list(adapt_delta = 0.95), 
+      sample_prior = "only",
+      seed = 111)
+
+#Plot
+pp_check(brm.model3a_prior, nsamples = 100)
+
+#Posterior Predictive Check
+
+#pp_check(brm.model0, nsamples = 100)
+#pp_check(brm.model1a, nsamples = 100)
+#pp_check(brm.model1b, nsamples = 100)
+#pp_check(brm.model2a, nsamples = 100)
+#pp_check(brm.model2b, nsamples = 100)
+pp_check(brm.model3a, nsamples = 100)
+#pp_check(brm.model3b, nsamples = 100)
+
+
+#Checking the chains
+plot(brm.model3a)
+
+
+#Marignal effects 
+#brms::marginal_effects(brm.model0)
+#brms::marginal_effects(brm.model1a)
+#brms::marginal_effects(brm.model1b)
+#brms::marginal_effects(brm.model2a)
+#brms::marginal_effects(brm.model2b)
+brms::marginal_effects(brm.model3a)
+#brms::marginal_effects(brm.model3b)
+
+```
+
+```{r + hypothesis testing}
+
+get_variables(brm.model3a)
+
+hypothesis(brm.model3a, "con.h1 > 0")
+#Evidence ratio way above >3. 
+#By convention, >3 is moderate to substantial evidence in favour of your hypothesis
+#Evidence ratio at 15.46
+
+hypothesis(brm.model3a, "con.h2 > 0")
+#Evidence ratio way above >3. 
+#By convention, >3 is moderate to substantial evidence in favour of your hypothesis
+#Evidence ratio at 2999
+
+
+```
+
+
+```{r + Effect size}
+#Further you want to comment on the effect size:
+summary(brm.model3a)
+
+#H1
+inv.logit(-1.32+0.43)-inv.logit(-1.32)
+
+#That is, about a 8% increase. 
+
+#H2
+inv.logit(-1.32+0.28)-inv.logit(-1.32)
+
+#That is, about a 5% increase. 
+```
+
+
+```{r + Most efficient nudge + Not USED}
+##WAS THE ONE NUDGE BETTER THAN THE OTHER? 
+
+hypothesis(brm.model3a, "con.h1 > con.h2")
+#Evidence ratio above 1. 
+#Not a substantial effect 
+#Evidence ratio = 2.19
+
+```
+
+
+```{r + Prediction Accuracy }
+#Make Predictions 
+model.pred <- predict(brm.model3a)
+
+#Make dataframe
+model.pred <- as.data.frame(model.pred)
+model.pred$green_product <- both$green_product
+model.pred$condition <- both$Condition
+model.pred$con.h1 <- both$con.h1
+model.pred$con.h2 <- both$con.h2
+
+#Prediction accuracy
+model.pred <- model.pred %>% mutate(pred.acc = ifelse(green_product == 1, Estimate, 1-Estimate))
+mean(model.pred$pred.acc)
+
+
+#Confusion matrix
+model.pred <- model.pred %>% mutate(pred.acc2 = ifelse(pred.acc > 0.5, 1, 0))
+model.pred$green_product <-as.factor(model.pred$green_product)
+model.pred$pred.acc2 <- as.factor(model.pred$pred.acc2)
+
+require(caret)    
+cm <-confusionMatrix(data=model.pred$pred.acc2, 
+  reference=model.pred$green_product)
+
+Accuracy<-round(cm$overall[1],2)
+
+cm
+
+```
+
+
+```{r + Plotting the outcome of cm against real data}
+
+#Prediciton Plots
+
+plot.predictions <- ggplot(model.pred %>% group_by(condition) %>% count(condition, green_product) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(condition, n, fill= green_product)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("1"= "green2", "0" = "orange"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5))+  theme(axis.ticks.y    = element_blank(),
+        legend.position = "none") + xlab("Actual Data")
+
+plot.predictions
+
+plot.preditions2 <- ggplot(model.pred %>% group_by(condition) %>% count(condition, pred.acc2) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(condition, n, fill= pred.acc2)) + geom_bar(stat = "identity") + scale_fill_manual(values = c("1"= "green2", "0" = "orange"))+
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_stack(vjust=0.5)) +  theme(axis.ticks.y    = element_blank(),
+        legend.position = "none") + xlab("Model Prediction") 
+
+plot.preditions2
+
+grid.arrange(plot.predictions, plot.preditions2)
+
+
+```
+
+
