@@ -120,20 +120,32 @@ both %>%
 
 #How did people rate their care for the environment
 both %>%
-  group_by(Condition, environmentcare)%>%
- summarise(count=n())
+  group_by(Condition)%>%
+ summarise(mean = mean(environmentcare))
+
 
 #How did people rate their consideration for the sustainablity when shopping
 both %>%
-  group_by(Condition, sustainabilityprod)%>%
- summarise(count=n())
+  group_by(Condition)%>%
+ summarise(mean = mean(sustainabilityprod))
+
+
+#The mean of how much people care about what others are buying 
+both %>%
+  group_by(Condition)%>%
+ summarise(mean(social))
 
 
 #The mean amount spend per condition (randomization of price)
 both %>%
   group_by(Condition)%>%
- summarise(mean(Total))
+ summarise(mean(price))
 
+
+#The effect of smileys
+both %>%
+  group_by(Condition)%>%
+ summarise(mean(nudge))
 ```
 
 ```{r + Plotting with percentage}
@@ -213,6 +225,18 @@ ggplot(both %>% group_by(Condition, sustainabilityprod) %>% count(Condition, Col
   scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
   geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_dodge(0.8)) + 
   facet_wrap(~ Condition)
+
+
+#Rank 1
+ggplot(both %>% group_by(Condition) %>% count(Condition, Rank2) %>%
+       mutate(pct=n/sum(n), 
+              ypos = cumsum(n) -0.5*n),
+       aes(Rank2, n, fill= Rank2)) + 
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  #scale_fill_manual(values = c("g"= "green", "r" = "red", "y" = "yellow")) +
+  geom_text(aes(label = paste0(sprintf("%1.1f", pct*100), "%")), position = position_dodge(0.8)) + 
+  facet_wrap(~ Condition)
+
 
 ```
 
